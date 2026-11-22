@@ -4,9 +4,14 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from search import search_text, search_similar, search_long, shots
+import csv
+import json
+import time
 
-from search import search_text, search_similar, shots
+from pydantic import BaseModel
 
+import dres
 
 ROOT = Path(__file__).parent
 DATA = ROOT / "assignment2_data"
@@ -39,8 +44,11 @@ def as_json(df):
 
 
 @app.get("/search")
-def search(q: str, k: int = 200):
-    results = search_text(q, k)
+def search(q: str, k: int = 200, combine: str = "none"):
+    if combine in ("max", "mean"):
+        results = search_long(q, k, combine)
+    else:
+        results = search_text(q, k)
     return as_json(results)
 
 
@@ -84,6 +92,36 @@ def video(video_id: str):
         media_type="video/mp4"
     )
 
+class Answer(BaseModel):
+    video_id: str
+    start_ms: int
+    end_ms: int
+
+
+@app.post("/dres/connect")
+def dres_connect():
+    return dres.connect()          
+
+
+@app.post("/dres/select")
+def dres_select(name: str):
+    e = dres.select(name)
+    return {"evaluation": e.get("name"), "id": e.get("id")}
+
+
+@app.post("/submit")
+def submit(answer: Answer):
+    result = dres.submit(answer.video_id, answer.start_ms, answer.end_ms)
+
+    with open(ROOT / "submissions.csv", "a", newline="") as f:
+        csv.writer(f).writerow([
+            time.strftime("%Y-%m-%d %H:%M:%S"),
+            dres.evaluation["name"] if dres.evaluation else "",
+            answer.video_id, answer.start_ms, answer.end_ms,
+            result["http_status"], json.dumps(result["reply"]),
+        ])
+
+    return result
 
 web_folder = ROOT / "web"
 web_folder.mkdir(exist_ok=True)
