@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interactive Video Retrieval</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header><h1>Interactive Video Retrieval</h1></header>
+  <main>
+    <section>
+      <h2>Search</h2>
+      <form id="searchForm" class="row">
+        <input id="query" type="text" placeholder="Search for a shot..." aria-label="Search query" required>
+        <label>Mode
+          <select id="mode">
+            <option value="visual">Visual text search</option>
+            <option value="transcripts">Transcripts</option>
+            <option value="metadata">Metadata</option>
+          </select>
+        </label>
+        <label class="check"><input id="longQuery" type="checkbox"> Long description</label>
+        <button class="primary" type="submit">Search</button>
+      </form>
+      <p id="status">Enter a query to begin.</p>
+    </section>
+
+    <div class="layout">
+      <section>
+        <div class="row">
+          <h2 id="resultsTitle">Results</h2>
+          <button id="backButton" type="button" hidden>Back to search results</button>
+        </div>
+        <div id="results" class="grid"></div>
+      </section>
+
+      <section>
+        <h2 id="selectedTitle">Selected shot</h2>
+        <video id="player" controls preload="metadata"></video>
+        <p id="playerStatus" class="hint">Select a shot to play it.</p>
+        <div class="player-actions">
+          <button id="previous" type="button" disabled>← Previous shot</button>
+          <button id="next" type="button" disabled>Next shot →</button>
+          <button id="similar" type="button" disabled>More like this</button>
+        </div>
+        <hr>
+        <h2>Submit to DRES</h2>
+        <div class="row">
+          <button id="connect" type="button">Connect to DRES</button>
+          <label>Evaluation
+            <select id="evaluation" disabled><option value="">Connect first</option></select>
+          </label>
+        </div>
+        <p id="dresStatus">No evaluation selected.</p>
+        <div class="row">
+          <label>Start (ms)<input id="startMs" class="time-input" type="number" min="0"></label>
+          <button id="setStart" type="button" disabled>Set start from player</button>
+          <label>End (ms)<input id="endMs" class="time-input" type="number" min="0"></label>
+          <button id="setEnd" type="button" disabled>Set end from player</button>
+        </div>
+        <p class="hint">Play the clip and check that your range covers the target before submitting.</p>
+        <button id="submit" class="primary" type="button" disabled>Submit answer</button>
+        <pre id="reply"></pre>
+      </section>
+    </div>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
