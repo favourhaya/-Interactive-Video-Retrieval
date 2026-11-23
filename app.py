@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from search import search_text, search_similar, search_long, shots
+from text_search import search_transcripts, search_metadata
 import csv
 import json
 import time
@@ -91,6 +92,23 @@ def video(video_id: str):
         videos[video_id],
         media_type="video/mp4"
     )
+
+
+@app.get("/search/transcripts")
+def transcript_search(q: str, k: int = 20):
+    results = search_transcripts(q, k)
+
+    for result in results:
+        result["thumbnail_url"] = (
+            f"/thumbnail/{result['video_id']}/{result['shot_no']}"
+        )
+
+    return results
+
+
+@app.get("/search/metadata")
+def metadata_search(q: str, k: int = 20):
+    return search_metadata(q, k)
 
 class Answer(BaseModel):
     video_id: str

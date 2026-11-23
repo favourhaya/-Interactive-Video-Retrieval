@@ -1,2 +1,6 @@
 assignment2_data/
 *.npy
+.venv/
+dres_config.json
+__pycache__/
+*.pyc
