@@ -4,11 +4,16 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from search import search_text, search_similar, search_long, shots
+from search import search_text, search_similar, search_long, shots, search_frames
 import csv
 import json
 import time
+import os
+import tempfile
 
+import cv2
+from fastapi import File, UploadFile
+from PIL import Image
 from pydantic import BaseModel
 
 import dres
@@ -125,6 +130,35 @@ def submit(answer: Answer):
 
 web_folder = ROOT / "web"
 web_folder.mkdir(exist_ok=True)
+def sample_frames(path, per_second=1.0, max_frames=30):
+    cap = cv2.VideoCapture(path)
+    video_fps = cap.get(cv2.CAP_PROP_FPS) or 25
+    step = max(1, round(video_fps / per_second))
+    frames, i = [], 0
+    while len(frames) < max_frames:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if i % step == 0:
+            frames.append(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
+        i += 1
+    cap.release()
+    return frames
+
+
+@app.post("/search_video")
+def search_by_video(file: UploadFile = File(...), k: int = 200):
+    suffix = Path(file.filename or "clip.mp4").suffix or ".mp4"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(file.file.read())
+        path = tmp.name
+    try:
+        frames = sample_frames(path)
+    finally:
+        os.remove(path)
+    if not frames:
+        raise HTTPException(status_code=400, detail="Couldn't read any frames from that video")
+    return as_json(search_frames(frames, k))
 
 app.mount(
     "/",

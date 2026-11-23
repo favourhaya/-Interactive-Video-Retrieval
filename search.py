@@ -125,7 +125,7 @@ row_of = {
     for i, (v, n) in enumerate(zip(shots.video_id, shots.shot_no))
 }
 
-model, _, _ = open_clip.create_model_and_transforms(
+model, _, preprocess = open_clip.create_model_and_transforms(
     "ViT-B-32", pretrained="laion2b_s34b_b79k"
 )
 
@@ -180,7 +180,13 @@ def search_long(text, k=20, combine="max"):
 def search_similar(video_id, shot_no, k=20):
     return top_k(vectors[row_of[(video_id, shot_no)]], k)
 
-
+def search_frames(images, k=20):
+    with torch.no_grad():
+        batch = torch.stack([preprocess(im.convert("RGB")) for im in images])
+        v = model.encode_image(batch)
+        v = v / v.norm(dim=-1, keepdim=True)
+    per_frame = vectors @ v.numpy().T       # one column of scores per frame
+    return rank(per_frame.max(axis=1), k)   # each shot's best match to any frame
 
 if __name__ == "__main__":
     #shotTable() remove comments to build and embed shi
