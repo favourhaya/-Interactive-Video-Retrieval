@@ -5,10 +5,13 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from search import search_text, search_similar, search_long, shots, search_frames
+from search import (search_queries, search_similar, search_similar_many, split_sentences,
+                    shots, search_frames, search_sequence, rank, row_of)
+import numpy as np
 from text_search import search_transcripts, search_metadata
 
 import csv
+import io
 import json
 import time
 import os
@@ -52,17 +55,45 @@ def as_json(df):
 
 
 @app.get("/search")
-def search(q: str, k: int = 200, combine: str = "none"):
+def search(q: str, k: int = 200, combine: str = "none", per_video: int = 0):
+    # One query per line: each line is a separate phrasing, a shot scores its best line.
+    # With "Long description" on, every line is also split into sentences.
+    queries = [line.strip() for line in q.splitlines() if line.strip()]
+    if not queries:
+        return []
+    if combine == "sequence":
+        # KIS-T chaining: each line is one step of the described sequence, in order.
+        return as_json(search_sequence(queries, k, per_video))
     if combine in ("max", "mean"):
-        results = search_long(q, k, combine)
-    else:
-        results = search_text(q, k)
-    return as_json(results)
+        queries = [s for line in queries for s in (split_sentences(line) or [line])]
+    method = "mean" if combine == "mean" else "max"
+    return as_json(search_queries(queries, k, method, per_video))
 
 
 @app.get("/similar")
-def similar(video_id: str, shot_no: int, k: int = 200):
-    results = search_similar(video_id, shot_no, k)
+def similar(video_id: str, shot_no: int, k: int = 200, per_video: int = 0):
+    results = search_similar(video_id, shot_no, k, per_video)
+    return as_json(results)
+
+
+class ShotRef(BaseModel):
+    video_id: str
+    shot_no: int
+
+
+class SimilarMany(BaseModel):
+    shots: list[ShotRef]
+    k: int = 200
+    per_video: int = 0
+
+
+@app.post("/similar_many")
+def similar_many(body: SimilarMany):
+    try:
+        results = search_similar_many([(s.video_id, s.shot_no) for s in body.shots],
+                                      body.k, body.per_video)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail=str(error))
     return as_json(results)
 
 
@@ -101,21 +132,41 @@ def video(video_id: str):
     )
 
 
-@app.get("/search/transcripts")
-def transcript_search(q: str, k: int = 20):
-    results = search_transcripts(q, k)
-
-    for result in results:
-        result["thumbnail_url"] = (
-            f"/thumbnail/{result['video_id']}/{result['shot_no']}"
-        )
-
-    return results
+AVS_VISUAL_POOL = 1000   # text may only re-order the visual top-N, never add shots
+AVS_TEXT_WEIGHT = 0.3    # weight of transcript / metadata evidence relative to visual
 
 
-@app.get("/search/metadata")
-def metadata_search(q: str, k: int = 20):
-    return search_metadata(q, k)
+@app.get("/search/avs")
+def avs_search(q: str, k: int = 200, per_video: int = 0):
+    """AVS combined search: visual ranking, re-ordered by transcript and metadata evidence.
+    Every shot in the visual top-N gets 1/(60 + visual rank) (reciprocal rank fusion).
+    A shot whose speech matches the query (transcript rank r) gets + w/(60 + r), and every
+    candidate shot of a video whose title/description/tags match (metadata rank r) gets
+    + w/(60 + r). Text can only move up shots that already *look* right: when text could
+    add its own shots, "fish" pulled in kayakers and fly-tying, and "cooking" pulled in
+    interviews and slides — wrong AVS submissions cost points."""
+    queries = [line.strip() for line in q.splitlines() if line.strip()]
+    if not queries:
+        return []
+    text = " ".join(queries)
+    fused = np.full(len(shots), -1.0)                       # -1 = not a candidate
+
+    visual = search_queries(queries, AVS_VISUAL_POOL, "max")   # each line = one phrasing
+    for r, row in enumerate(visual.itertuples()):
+        fused[row_of[(row.video_id, int(row.shot_no))]] = 1 / (60 + r)
+    candidate = fused > 0
+
+    for r, hit in enumerate(search_transcripts(text, 200)):
+        i = row_of.get((hit["video_id"], int(hit["shot_no"])))
+        if i is not None and candidate[i]:
+            fused[i] += AVS_TEXT_WEIGHT / (60 + r)
+
+    video_ids = shots.video_id.to_numpy()
+    for r, hit in enumerate(search_metadata(text, 50)):
+        fused[candidate & (video_ids == hit["video_id"])] += AVS_TEXT_WEIGHT / (60 + r)
+
+    results = rank(fused, k, per_video)
+    return as_json(results[results.score > 0])
 
 class Answer(BaseModel):
     video_id: str
@@ -148,6 +199,26 @@ def submit(answer: Answer):
 
     return result
 
+
+class AnswerBatch(BaseModel):
+    answers: list[Answer]
+
+
+@app.post("/submit_batch")
+def submit_batch(batch: AnswerBatch):
+    """AVS: send several shots in one click. Each shot is its own DRES submission (so each
+    is judged as its own segment), logged like a single submit. One failure doesn't stop
+    the rest."""
+    results = []
+    for answer in batch.answers:
+        try:
+            outcome = submit(answer)
+        except Exception as error:
+            outcome = {"http_status": 0, "reply": str(error)}
+        results.append({"video_id": answer.video_id, "start_ms": answer.start_ms,
+                        "end_ms": answer.end_ms, **outcome})
+    return results
+
 web_folder = ROOT / "web"
 web_folder.mkdir(exist_ok=True)
 def sample_frames(path, per_second=1.0, max_frames=30):
@@ -166,19 +237,37 @@ def sample_frames(path, per_second=1.0, max_frames=30):
     return frames
 
 
-@app.post("/search_video")
-def search_by_video(file: UploadFile = File(...), k: int = 200):
-    suffix = Path(file.filename or "clip.mp4").suffix or ".mp4"
+def frames_from_video(data, filename):
+    suffix = Path(filename or "clip.mp4").suffix or ".mp4"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(file.file.read())
+        tmp.write(data)
         path = tmp.name
     try:
-        frames = sample_frames(path)
+        return sample_frames(path)
     finally:
         os.remove(path)
-    if not frames:
-        raise HTTPException(status_code=400, detail="Couldn't read any frames from that video")
-    return as_json(search_frames(frames, k))
+
+
+@app.post("/search_image")
+def search_by_images(files: list[UploadFile] = File(...), k: int = 200, per_video: int = 0):
+    """KIS-V: search with pasted screenshots and/or a recorded clip. Images are used as-is,
+    videos are sampled at 1 frame per second; every image/frame becomes one query."""
+    images = []
+    for file in files:
+        data = file.file.read()
+        if not (file.content_type or "").startswith("video/"):
+            try:
+                images.append(Image.open(io.BytesIO(data)).convert("RGB"))
+                continue
+            except Exception:
+                pass                    # not an image: maybe a video with an unknown type
+        frames = frames_from_video(data, file.filename)
+        if not frames:
+            raise HTTPException(status_code=400, detail=f"{file.filename}: not an image or video")
+        images += frames
+    if not images:
+        raise HTTPException(status_code=400, detail="No usable images or video frames")
+    return as_json(search_frames(images, k, per_video))
 
 app.mount(
     "/",

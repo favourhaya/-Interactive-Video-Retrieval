@@ -160,7 +160,6 @@ def main(limit=None):
 
                         features = model.encode_image(torch.stack(images))
 
-                        # features = features / features.norm()
                         features = features / features.norm(dim=-1, keepdim=True)
 
                     embeddings.append(features.cpu().numpy())

@@ -1,4 +1,4 @@
-from search import search_text, search_similar, search_long, shots
+from search import search_text, search_long
 
 description = """The first shot shows a drummer sitting behind a drum kit. He is wearing headphones and a black shirt that has "HI HOW ARE YOU?" written on it. The drummer throws a drumstick in the air and catches it again. The nest few shots show different musicians, one at a time. There is a text overlay for the first few seconds of the sequence which presumably lists the name of the band and the song they are about to play."""
 

@@ -9,24 +9,36 @@ section { background: white; border: 1px solid #d9e0e8; border-radius: 8px; padd
 .row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
 label { display: grid; gap: 5px; font-size: .9rem; }
 input, select, button { font: inherit; padding: 9px; border: 1px solid #abb8c7; border-radius: 5px; }
-input[type="text"] { min-width: 260px; flex: 1; }
 button { background: #eaf0f8; cursor: pointer; }
 button.primary { color: white; background: #245ca8; border-color: #245ca8; }
 button:disabled { opacity: .5; cursor: not-allowed; }
-.check { display: flex; align-items: center; gap: 6px; padding-bottom: 9px; }
-.check input { margin: 0; }
 .hint, #status, #dresStatus { color: #536273; font-size: .9rem; }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 16px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 10px; }
-.card { text-align: left; width: 100%; padding: 0; overflow: hidden; background: white; border: 1px solid #cfd8e3; }
+textarea { font: inherit; padding: 9px; border: 1px solid #abb8c7; border-radius: 5px; min-width: 260px; flex: 1; resize: vertical; }
+.drop-zone { margin-top: 12px; padding: 12px; border: 2px dashed #abb8c7; border-radius: 8px; display: grid; gap: 10px; }
+.drop-zone.over, .drop-zone:focus { border-color: #245ca8; background: #eef4fc; outline: none; }
+.drop-text { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .9rem; color: #536273; }
+.drop-text strong { color: #17212b; }
+.image-queue { display: flex; gap: 8px; flex-wrap: wrap; }
+.image-queue:empty { display: none; }
+.queued { position: relative; width: 120px; height: 68px; border: 1px solid #cfd8e3; border-radius: 5px; overflow: hidden; background: #e6ebf0; display: grid; place-items: center; font-size: .75rem; text-align: center; }
+.queued img { width: 100%; height: 100%; object-fit: cover; }
+.queued button { position: absolute; top: 2px; right: 2px; padding: 0 6px; line-height: 1.4; }
+.batch-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.card { position: relative; overflow: hidden; background: white; border: 1px solid #cfd8e3; border-radius: 5px; }
+.card-main { display: block; text-align: left; width: 100%; padding: 0; border: 0; border-radius: 0; background: white; }
 .card:hover, .card.selected { border-color: #245ca8; }
 .card.sent { box-shadow: inset 0 0 0 2px #32835b; }
+.card.picked { outline: 3px solid #e09a1a; outline-offset: -3px; }
+.pick { position: absolute; top: 6px; left: 6px; display: flex; padding: 4px; border-radius: 4px; background: rgba(255, 255, 255, .9); cursor: pointer; }
+.pick input { margin: 0; width: 18px; height: 18px; cursor: pointer; }
+.sent-tag { position: absolute; top: 6px; right: 6px; padding: 2px 6px; border-radius: 4px; font-size: .75rem; color: white; background: #32835b; }
 .thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #e6ebf0; display: block; }
 .no-thumb { display: grid; place-items: center; color: #657487; }
 .card-body { padding: 9px; }
 .card-body strong, .card-body small { display: block; }
 .card-body small { color: #536273; margin-top: 4px; }
-.card-body p { margin: 7px 0 0; font-size: .84rem; max-height: 4.3em; overflow: hidden; }
 video { display: block; width: 100%; background: black; aspect-ratio: 16 / 9; }
 .player-actions { display: flex; gap: 7px; margin-top: 10px; flex-wrap: wrap; }
 .time-input { width: 130px; }

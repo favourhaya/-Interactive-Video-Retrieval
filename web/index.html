@@ -12,18 +12,46 @@
     <section>
       <h2>Search</h2>
       <form id="searchForm" class="row">
-        <input id="query" type="text" placeholder="Search for a shot..." aria-label="Search query" required>
+        <textarea id="query" rows="2" placeholder="Search for a shot... one phrasing per line (Enter = search, Shift+Enter = new line)" aria-label="Search query" required></textarea>
         <label>Mode
           <select id="mode">
             <option value="visual">Visual text search</option>
-            <option value="transcripts">Transcripts</option>
-            <option value="metadata">Metadata</option>
+            <option value="kist">KIS-T (description)</option>
+            <option value="avs">AVS (combined)</option>
           </select>
         </label>
-        <label class="check"><input id="longQuery" type="checkbox"> Long description</label>
+        <label>KIS-T method
+          <select id="kistMethod" disabled title="Long description: paste the text as-is, sentences are matched separately. Sequence: one visual line per shot, in the order they happen.">
+            <option value="max">Long description</option>
+            <option value="sequence">Sequence (one line per shot, in order)</option>
+          </select>
+        </label>
+        <label>Shots per video
+          <select id="perVideo" title="Limit how many shots one video may take in visual, image and similar results">
+            <option value="0">All</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="5">5</option>
+          </select>
+        </label>
         <button class="primary" type="submit">Search</button>
       </form>
-      <p id="status">Enter a query to begin.</p>
+
+      <div id="dropZone" class="drop-zone" tabindex="0" aria-label="Image or clip query">
+        <div class="drop-text">
+          <strong>Image / clip search</strong>
+          <span>Paste a screenshot (Win+Shift+S, then Ctrl+V), drop images or a video clip here, or</span>
+          <button id="chooseFiles" type="button">Choose files</button>
+          <input id="fileInput" type="file" accept="image/*,video/*" multiple hidden>
+        </div>
+        <div id="imageQueue" class="image-queue"></div>
+        <div class="row">
+          <button id="imageSearch" class="primary" type="button" disabled>Search images</button>
+          <button id="imageClear" type="button" disabled>Clear images</button>
+        </div>
+      </div>
+      <p id="status">Enter a query or paste a screenshot to begin.</p>
     </section>
 
     <div class="layout">
@@ -31,6 +59,14 @@
         <div class="row">
           <h2 id="resultsTitle">Results</h2>
           <button id="backButton" type="button" hidden>Back to search results</button>
+        </div>
+        <div class="batch-bar">
+          <span><strong id="batchCount">0</strong> selected for batch</span>
+          <button id="batchSimilar" type="button" disabled>More like selected</button>
+          <button id="batchSubmit" class="primary" type="button" disabled>Submit selected</button>
+          <button id="batchClear" type="button" disabled>Clear selection</button>
+          <button id="newTask" type="button" title="Clear all 'sent' marks and the batch. Press when DRES moves on to the next task.">New task</button>
+          <span class="hint">Tick shots (or press B on the playing shot). Each is submitted as its own shot range.</span>
         </div>
         <div id="results" class="grid"></div>
       </section>
@@ -42,8 +78,11 @@
         <div class="player-actions">
           <button id="previous" type="button" disabled>← Previous shot</button>
           <button id="next" type="button" disabled>Next shot →</button>
+          <button id="allShots" type="button" disabled>All shots in video</button>
           <button id="similar" type="button" disabled>More like this</button>
+          <button id="toggleBatch" type="button" disabled>Add to batch</button>
         </div>
+        <p class="hint">Keys (outside text boxes): ← / → previous / next shot, B add / remove from batch.</p>
         <hr>
         <h2>Submit to DRES</h2>
         <div class="row">

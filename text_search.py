@@ -7,6 +7,33 @@ import html
 ROOT = Path(__file__).parent
 DATA = ROOT / "assignment2_data"
 
+# FTS5 tokenizer for both tables: Porter stemming ("drums"/"drumming" -> "drum"),
+# case folding and accent removal ("Cúria" -> "curia"). Queries pass through the
+# same tokenizer, so they are stemmed the same way. Rebuild both indexes after changing this.
+TOKENIZER = "porter unicode61 remove_diacritics 2"
+
+# Common English words that carry no topic. Left in, they match almost every transcript
+# line and title ("in", "a", "the") and push unrelated videos up, which adds noise to
+# the AVS combined search.
+STOPWORDS = set("""
+a about above after again against all also am an and any are as at be because been before
+being below between both but by can could did do does doing down during each few for from
+further had has have having he her here hers herself him himself his how i if in into is it
+its itself just me more most my myself no nor not now of off on once one only or other our
+ours ourselves out over own same she should so some such than that the their theirs them
+themselves then there these they this those through to too under until up very was we were
+what when where which while who whom why will with would you your yours yourself yourselves
+shot shots show shows showing video scene first next
+""".split())
+
+
+def fts_query(query):
+    """Turn free text into an FTS5 query: every non-stopword, OR-ed together.
+    If the query is nothing but stopwords, fall back to all of its words."""
+    words = re.findall(r"\w+", query.lower())
+    content = [w for w in words if w not in STOPWORDS] or words
+    return " OR ".join(f'"{w}"' for w in dict.fromkeys(content))   # dedupe, keep order
+
 def to_ms(timestamp):
     hours, minutes, seconds = timestamp.strip().split(":")
     sec, ms = seconds.split(",")
@@ -88,12 +115,13 @@ def build_index():
 
     cursor.execute("Drop Table IF EXISTS transcripts")
 
-    cursor.execute("""
+    cursor.execute(f"""
         CREATE VIRTUAL TABLE transcripts USING fts5(
             video_id UNINDEXED,
             start_ms UNINDEXED,
             end_ms UNINDEXED,
-            text
+            text,
+            tokenize = '{TOKENIZER}'
         )
     """)
 
@@ -139,12 +167,10 @@ def search_transcripts(query, k = 20):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    words = re.findall(r"\w+", query)
-    if not words or k <= 0:
+    search_query = fts_query(query)
+    if not search_query or k <= 0:
         conn.close()
         return []
-
-    search_query = " OR ".join(f'"{word}"' for word in words)
 
     cursor.execute("""
         SELECT video_id, start_ms, end_ms, text, bm25(transcripts) AS rank
@@ -212,13 +238,14 @@ def build_metadata_index():
 
     conn = sqlite3.connect(db_path)
     conn.execute("DROP TABLE IF EXISTS metadata")
-    conn.execute("""
+    conn.execute(f"""
         CREATE VIRTUAL TABLE metadata USING fts5(
             video_id UNINDEXED,
             title,
             description,
-            tags
-            )        
+            tags,
+            tokenize = '{TOKENIZER}'
+            )
         """)
 
     count = 0
@@ -244,11 +271,9 @@ def build_metadata_index():
 
 
 def search_metadata(query, k=20):
-    words = re.findall(r"\w+", query)
-    if not words or k <= 0:
+    match = fts_query(query)
+    if not match or k <= 0:
         return []
-
-    fts_query = " OR ".join(f'"{word}"' for word in words)
 
     conn = sqlite3.connect(DATA / "text_index.db")
     conn.row_factory = sqlite3.Row
@@ -260,7 +285,7 @@ def search_metadata(query, k=20):
         ORDER BY rank
         LIMIT ?
         """,
-        (fts_query, k)
+        (match, k)
     ).fetchall()
     conn.close()
 
@@ -277,30 +302,6 @@ def search_metadata(query, k=20):
     ]
 
 if __name__ == "__main__":
-   # files = list((DATA / "Transcript").rglob("00031.srt"))
-
-    #if files:
-       # segments = parse_srt(files[0])
-
-       # print("total segemnts:" ,len(segments))
-
-       # for segment in segments:
-        #    print(segment)
-   # else:
-      #  print("not found")
-
-    #build_index()
-
-    #results = search_transcripts("cooking", k = 5)
-    #print("Total results:", len(results))
-
-    #for result in results:
-        #print(result)
-
-
-    count = build_metadata_index()
-    print("Indexed videos:", count)
-
-    results = search_metadata("Willow Lane", k = 5)
-    for result in results:
-        print(result)
+    # Rebuild both full-text indexes (needed after changing TOKENIZER or the source data).
+    build_index()
+    print("Indexed videos:", build_metadata_index())
