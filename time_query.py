@@ -33,7 +33,7 @@ with zipfile.ZipFile(zip_path) as z:
     names = sorted(z.namelist())[:30]
     frames = [Image.open(io.BytesIO(z.read(n))).convert("RGB") for n in names]
 
-for n in (1, 10):                      
+for n in (1):                      
     search_frames(frames[:n], 200)        
     t = time.perf_counter()
     for _ in range(5):
