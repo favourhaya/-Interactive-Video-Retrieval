@@ -6,16 +6,15 @@ import requests
 CONFIG = json.loads((Path(__file__).parent / "dres_config.json").read_text())
 BASE = CONFIG["url"].rstrip("/")
 
-http = requests.Session()        # one connection, reused; also keeps any cookies
+http = requests.Session()       
 session_id = None
-evaluation = None                # the evaluation we submit to: a dict with "id", "name", ...
-
+evaluation = None               
 
 def login():
     global session_id
     r = http.post(f"{BASE}/api/v2/login", timeout=10,
                   json={"username": CONFIG["username"], "password": CONFIG["password"]})
-    r.raise_for_status()                      # stop here if the login was refused
+    r.raise_for_status()                     
     session_id = r.json()["sessionId"]
 
 

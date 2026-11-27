@@ -40,7 +40,6 @@ def main(limit=None):
 
     CACHE.mkdir(exist_ok=True)
 
-    # Read CSV
     df = pd.read_csv(BASE / "shots.csv", dtype={"video_id": str})
 
     videos = {
@@ -48,7 +47,6 @@ def main(limit=None):
         for video, group in df.groupby("video_id", sort=False)
     }
 
-    # Find videos without embeddings
     pending = [
         video for video in videos
         if not (CACHE / f"{video}.npy").exists()
@@ -57,7 +55,6 @@ def main(limit=None):
     if limit is not None:
         pending = pending[:limit]
 
-    # Load CLIP
     model, _, preprocess = open_clip.create_model_and_transforms(
         "ViT-B-32",
         pretrained="laion2b_s34b_b79k"
@@ -65,12 +62,10 @@ def main(limit=None):
 
     model.eval()
 
-    # Process videos in chunks
     for start in range(0, len(pending), CHUNK_SIZE):
 
         batch = pending[start:start + CHUNK_SIZE]
 
-        # Download keyframes
         video_list = ",".join(str(int(v)) for v in batch)
 
         subprocess.run(
@@ -95,7 +90,6 @@ def main(limit=None):
                 print(f"{video}: No keyframes found")
                 continue
 
-            # Read keyframes from ZIP
             keyframes = {}
 
             with zipfile.ZipFile(zip_path) as archive:
@@ -108,7 +102,6 @@ def main(limit=None):
                         shot = int(match.group(1))
                         keyframes[shot] = archive.read(filename)
 
-            # Read thumbnails from ZIP
             thumbnails = {}
 
             if thumb_path is not None:
@@ -123,7 +116,6 @@ def main(limit=None):
                             shot = int(match.group(1))
                             thumbnails[shot] = archive.read(filename)
 
-            # Generate embeddings
             embeddings = []
             missing = []
             thumb_count = 0
@@ -172,10 +164,8 @@ def main(limit=None):
             else:
                 embeddings = np.empty((0, 0), dtype=np.float32)
 
-            # Save embeddings
             save_embeddings(CACHE / f"{video}.npy", embeddings)
 
-            # Remove downloaded keyframes
             zip_path.unlink(missing_ok=True)
 
             print(f"{video}: {len(embeddings)} embeddings, {thumb_count} thumbnails")

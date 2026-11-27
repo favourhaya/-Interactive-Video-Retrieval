@@ -11,8 +11,6 @@ DATA = ROOT / "assignment2_data"
 
 
 def shotTable():
-    """Build shots.csv from the master shot boundaries (msb/<video>.tsv, unzipped).
-    Shot n of a video is the n-th data row of its TSV. Run once; the app only reads shots.csv."""
     rows = []
     for tsv_file in sorted((DATA / "msb").rglob("*.tsv")):
         video_id = tsv_file.stem
@@ -32,7 +30,6 @@ def shotTable():
 
 
 def load_index():
-    """shots.csv plus one CLIP embedding per shot (built by embed_keyframes.py), same row order."""
     shots = pd.read_csv(ROOT / "shots.csv", dtype={"video_id": str})
     vectors = np.load(ROOT / "embeddings_keyframes.npy")
     assert len(vectors) == len(shots), "embeddings don't match shots.csv"
@@ -62,8 +59,6 @@ video_start = np.r_[0, np.flatnonzero(np.diff(video_code)) + 1]
 
 
 def rank(scores, k, per_video=0):
-    """Top-k shots by score. With per_video > 0, keep at most that many shots from any
-    one video, so the list covers more distinct videos (AVS rewards diversity)."""
     order = np.argsort(-scores)
     if per_video > 0:
         taken = np.zeros(video_code.max() + 1, dtype=int)
@@ -95,8 +90,6 @@ def encode_texts(texts):
 
 
 def search_queries(queries, k=20, per_video=0):
-    """Several text queries at once (one phrasing per line, used by AVS). Each shot gets
-    its best score over the queries, i.e. it matches if it fits any phrasing."""
     per_query = vectors @ encode_texts(queries).T      # (shots, queries)
     return rank(per_query.max(axis=1), k, per_video)
 
@@ -115,11 +108,7 @@ def ahead_max(col, window):
 
 
 def search_sequence(lines, k=20, per_video=0, window=3):
-    """KIS-T temporal chaining. lines = short visual descriptions in the order they happen.
-    score(s) = z(line 1, s) + best score of the rest of the chain starting at one of the
-    shots s .. s+window in the same video (computed from the last line backwards).
-    z = each line's similarities standardised (mean 0, spread 1) so lines weigh equally.
-    A shot ranks high when the lines are matched one after another in its video."""
+  
     per_line = vectors @ encode_texts(lines).T                 # (shots, lines)
     z = (per_line - per_line.mean(axis=0)) / per_line.std(axis=0)
     chain = z[:, -1]
@@ -133,9 +122,7 @@ def search_similar(video_id, shot_no, k=20, per_video=0):
 
 
 def trim_borders(image, threshold=18):
-    """Cut black bars (letterboxing, dark player background) off a screenshot, so CLIP
-    sees the video content rather than a frame of black. Keeps the image if trimming
-    would leave almost nothing."""
+   
     gray = np.asarray(image.convert("L"), dtype=np.float32)
     rows = np.where(gray.mean(axis=1) > threshold)[0]
     cols = np.where(gray.mean(axis=0) > threshold)[0]
@@ -145,22 +132,12 @@ def trim_borders(image, threshold=18):
 
 
 def is_informative(image, min_std=12):
-    """False for near-uniform frames (black fades, blank title backgrounds): they look
-    like thousands of shots and only add noise."""
+
     return np.asarray(image.convert("L"), dtype=np.float32).std() > min_std
 
 
 def search_frames(images, k=20, per_video=0):
-    """Image query: screenshots, or frames sampled from a clip (KIS-V).
 
-    score(shot) = best z-score of the shot against any image
-                + how well the shot's whole video matches the clip
-                  (per image: best z-score among the video's shots, averaged over images).
-    The z-scores (per image: subtract its mean over all shots, divide by the spread) stop
-    a generic image that is similar to everything from dominating. The video term rewards
-    the video that matches *many* of the frames, which is what a real clip does.
-    On 25 simulated 20 s clips this put the target shot at rank 1 in 80% of cases
-    (64% with a plain max) and the target video in the top 10 in all of them."""
     images = [trim_borders(im.convert("RGB")) for im in images]
     images = [im for im in images if is_informative(im)] or images
     with torch.no_grad():
