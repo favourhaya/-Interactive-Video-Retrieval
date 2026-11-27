@@ -7,14 +7,10 @@ import html
 ROOT = Path(__file__).parent
 DATA = ROOT / "assignment2_data"
 
-# FTS5 tokenizer for both tables: Porter stemming ("drums"/"drumming" -> "drum"),
-# case folding and accent removal ("Cúria" -> "curia"). Queries pass through the
-# same tokenizer, so they are stemmed the same way. Rebuild both indexes after changing this.
+#Porter stemming and acent folding which is used by the both transcript and metadata tables
 TOKENIZER = "porter unicode61 remove_diacritics 2"
 
-# Common English words that carry no topic. Left in, they match almost every transcript
-# line and title ("in", "a", "the") and push unrelated videos up, which adds noise to
-# the AVS combined search.
+#All of the common stop words 
 STOPWORDS = set("""
 a about above after again against all also am an and any are as at be because been before
 being below between both but by can could did do does doing down during each few for from
@@ -27,13 +23,12 @@ shot shots show shows showing video scene first next
 """.split())
 
 
+#Builds the FTS5 query from non-stop words, OR-ed together
 def fts_query(query):
-    """Turn free text into an FTS5 query: every non-stopword, OR-ed together.
-    If the query is nothing but stopwords, fall back to all of its words."""
     words = re.findall(r"\w+", query.lower())
     content = [w for w in words if w not in STOPWORDS] or words
-    return " OR ".join(f'"{w}"' for w in dict.fromkeys(content))   # dedupe, keep order
-
+    return " OR ".join(f'"{w}"' for w in dict.fromkeys(content))
+#changes to ms
 def to_ms(timestamp):
     hours, minutes, seconds = timestamp.strip().split(":")
     sec, ms = seconds.split(",")
@@ -41,7 +36,7 @@ def to_ms(timestamp):
     return (int(hours) * 3600000 + int(minutes) * 60000 + int(sec) * 1000 + int(ms))
 
 def load_shots():
-    #dictionary to store shot information keyed by shot shot ID
+    #shot information per video, keyed by video ID
     shots = {}
 
     with open(ROOT / "shots.csv", "r", encoding="utf-8-sig", newline="") as file:
@@ -103,7 +98,9 @@ def parse_srt(file_path):
 
     return segements
 
+#build the transcript full-text index, one row per subtitle segment
 def build_index():
+    #loads the shot table and video IDs in the sample
     shots = load_shots()
     video_ids = set(shots.keys())
 
@@ -113,8 +110,10 @@ def build_index():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
+    #start from empty table
     cursor.execute("Drop Table IF EXISTS transcripts")
 
+    #only the text is searchable
     cursor.execute(f"""
         CREATE VIRTUAL TABLE transcripts USING fts5(
             video_id UNINDEXED,
@@ -127,18 +126,21 @@ def build_index():
 
     total_files = 0
     total_segments = 0
-
+    #one .srt file per video
     for file in transcript_dir.rglob("*.srt"):
         video_id = file.stem
 
+        #skips videos that are not in the sample
         if video_id not in video_ids:
             continue
 
         segments = parse_srt(file)
 
+        #skips empty transcript
         if not segments:
             continue
 
+        #insert every subtitle segment as its own row
         for segment in segments:
             cursor.execute("""
             INSERT INTO transcripts (video_id, start_ms, end_ms, text)
@@ -152,6 +154,7 @@ def build_index():
         total_files += 1
         total_segments += len(segments)
 
+    #save the index and closes the database
     conn.commit()
     conn.close()
 
@@ -159,6 +162,7 @@ def build_index():
     print("Total transcript segments", total_segments)
     print("Index saved to", db_path)
 
+#searches transcripts and maps each matching segment to the shot it overlaps the most
 def search_transcripts(query, k = 20):
     shots = load_shots()
 
@@ -167,11 +171,13 @@ def search_transcripts(query, k = 20):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
+    #build the query, stop if there is nothing to search for
     search_query = fts_query(query)
     if not search_query or k <= 0:
         conn.close()
         return []
 
+    #Best matching segment first using BM25
     cursor.execute("""
         SELECT video_id, start_ms, end_ms, text, bm25(transcripts) AS rank
         From transcripts
@@ -184,6 +190,7 @@ def search_transcripts(query, k = 20):
     conn.close()
 
     results = []
+    #removes duplicate
     visited = set()
 
     for match in matches:
@@ -194,18 +201,19 @@ def search_transcripts(query, k = 20):
         best_shot = None
         best_overlap = 0
 
+        #finds the shot whose time range overlaps this segment the most
         for shot in shots.get(video_id, []):
             overlap = max(0, min(end_ms, shot["end_ms"]) - max(start_ms, shot["start_ms"]))
 
             if overlap > best_overlap:
                 best_overlap = overlap
                 best_shot = shot
-
+        #if segment does not fit into any shots
         if best_shot is None:
             continue
 
         key = (video_id, best_shot["shot_no"])
-
+        #skips shots that are already in the result
         if key in visited:
             continue
 
@@ -220,24 +228,28 @@ def search_transcripts(query, k = 20):
             "score" : -match["rank"],
             "text" : match["text"]
         })
-
+        #stop after k shots
         if len(results) >= k:
             break
     return results
 
 
-
+#removes HTML tags from metadata
 def clean_metadata_text(value):
     text = html.unescape(value or "")
     text = re.sub(r"<[^>]*>", " ", text)
     return " ".join(text.split())
 
+#Build the metadata full-text index for te sample video
 def build_metadata_index():
     video_ids = set(load_shots())
     db_path = DATA / "text_index.db"
 
     conn = sqlite3.connect(db_path)
+
+    #start from empty table
     conn.execute("DROP TABLE IF EXISTS metadata")
+    #full-text table with searchable title, description and tags
     conn.execute(f"""
         CREATE VIRTUAL TABLE metadata USING fts5(
             video_id UNINDEXED,
@@ -253,9 +265,11 @@ def build_metadata_index():
     with open(DATA / "videos_metadata.csv", encoding="utf-8-sig", newline="") as file:
         for row in csv.DictReader(file):
             video_id = row["v3cId"]
+            #skips video that are not in sample
             if video_id not in video_ids:
                 continue
 
+            #insert the cleaned text
             conn.execute("INSERT INTO metadata (video_id, title, description, tags) VALUES (?,?,?,?)",
                          (video_id,
                           clean_metadata_text(row["title"]),
@@ -264,13 +278,14 @@ def build_metadata_index():
                           )
                         )
             count += 1
-
+        #save index and close the database
         conn.commit()
         conn.close()
         return count
 
-
+#searches video metadata, weighting title highest, then tags then description
 def search_metadata(query, k=20):
+    #build the query and stop if there is nothing to search for
     match = fts_query(query)
     if not match or k <= 0:
         return []
@@ -289,7 +304,7 @@ def search_metadata(query, k=20):
     ).fetchall()
     conn.close()
 
-
+    # one result per video
     return [
         {
             "video_id": row["video_id"],
@@ -302,6 +317,6 @@ def search_metadata(query, k=20):
     ]
 
 if __name__ == "__main__":
-    # Rebuild both full-text indexes (needed after changing TOKENIZER or the source data).
+    #build the two indexes
     build_index()
-    print("Indexed videos:", build_metadata_index())
+    build_metadata_index()

@@ -7,103 +7,65 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <header><h1>Interactive Video Retrieval</h1></header>
-  <main>
-    <section>
-      <h2>Search</h2>
-      <form id="searchForm" class="row">
-        <textarea id="query" rows="2" placeholder="Search for a shot... one phrasing per line (Enter = search, Shift+Enter = new line)" aria-label="Search query" required></textarea>
-        <label>Mode
-          <select id="mode">
-            <option value="visual">Visual text search</option>
-            <option value="kist">KIS-T (description)</option>
-            <option value="avs">AVS (combined)</option>
-          </select>
-        </label>
-        <label>KIS-T method
-          <select id="kistMethod" disabled title="Long description: paste the text as-is, sentences are matched separately. Sequence: one visual line per shot, in the order they happen.">
-            <option value="max">Long description</option>
-            <option value="sequence">Sequence (one line per shot, in order)</option>
-          </select>
-        </label>
-        <label>Shots per video
-          <select id="perVideo" title="Limit how many shots one video may take in visual, image and similar results">
-            <option value="0">All</option>
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3" selected>3</option>
-            <option value="5">5</option>
-          </select>
-        </label>
-        <button class="primary" type="submit">Search</button>
-      </form>
+  <h1>Interactive Video Retrieval</h1>
 
-      <div id="dropZone" class="drop-zone" tabindex="0" aria-label="Image or clip query">
-        <div class="drop-text">
-          <strong>Image / clip search</strong>
-          <span>Paste a screenshot (Win+Shift+S, then Ctrl+V), drop images or a video clip here, or</span>
-          <button id="chooseFiles" type="button">Choose files</button>
-          <input id="fileInput" type="file" accept="image/*,video/*" multiple hidden>
-        </div>
-        <div id="imageQueue" class="image-queue"></div>
-        <div class="row">
-          <button id="imageSearch" class="primary" type="button" disabled>Search images</button>
-          <button id="imageClear" type="button" disabled>Clear images</button>
-        </div>
-      </div>
-      <p id="status">Enter a query or paste a screenshot to begin.</p>
+  <section>
+    <form id="searchForm">
+      <textarea id="query" rows="3" required
+        placeholder="KIS-T: one visual line per shot, in order. AVS: one phrasing per line."></textarea>
+      <select id="mode" aria-label="Search mode">
+        <option value="kist">KIS-T (sequence)</option>
+        <option value="avs">AVS (combined)</option>
+      </select>
+      <button type="submit">Search</button>
+    </form>
+    <div id="imageBox">
+      KIS-V: paste screenshots (Ctrl+V)
+      <span id="imageCount"></span>
+      <button id="imageClear" type="button" disabled>Clear images</button>
+    </div>
+    <p id="status"></p>
+  </section>
+
+  <div class="layout">
+    <section>
+      <h2 id="resultsTitle">Results</h2>
+      <button id="backButton" type="button" hidden>Back to search results</button>
+      <p>
+        <span id="batchCount">0</span> selected
+        <button id="batchSubmit" type="button" disabled>Submit selected</button>
+        <button id="newTask" type="button">New task</button>
+      </p>
+      <div id="results" class="grid"></div>
     </section>
 
-    <div class="layout">
-      <section>
-        <div class="row">
-          <h2 id="resultsTitle">Results</h2>
-          <button id="backButton" type="button" hidden>Back to search results</button>
-        </div>
-        <div class="batch-bar">
-          <span><strong id="batchCount">0</strong> selected for batch</span>
-          <button id="batchSimilar" type="button" disabled>More like selected</button>
-          <button id="batchSubmit" class="primary" type="button" disabled>Submit selected</button>
-          <button id="batchClear" type="button" disabled>Clear selection</button>
-          <button id="newTask" type="button" title="Clear all 'sent' marks and the batch. Press when DRES moves on to the next task.">New task</button>
-          <span class="hint">Tick shots (or press B on the playing shot). Each is submitted as its own shot range.</span>
-        </div>
-        <div id="results" class="grid"></div>
-      </section>
+    <section>
+      <h2 id="selectedTitle">No shot selected</h2>
+      <video id="player" controls preload="metadata"></video>
+      <p id="playerStatus"></p>
+      <button id="previous" type="button" disabled>← Previous shot</button>
+      <button id="next" type="button" disabled>Next shot →</button>
+      <button id="allShots" type="button" disabled>All shots in video</button>
+      <button id="similar" type="button" disabled>More like this</button>
 
-      <section>
-        <h2 id="selectedTitle">Selected shot</h2>
-        <video id="player" controls preload="metadata"></video>
-        <p id="playerStatus" class="hint">Select a shot to play it.</p>
-        <div class="player-actions">
-          <button id="previous" type="button" disabled>← Previous shot</button>
-          <button id="next" type="button" disabled>Next shot →</button>
-          <button id="allShots" type="button" disabled>All shots in video</button>
-          <button id="similar" type="button" disabled>More like this</button>
-          <button id="toggleBatch" type="button" disabled>Add to batch</button>
-        </div>
-        <p class="hint">Keys (outside text boxes): ← / → previous / next shot, B add / remove from batch.</p>
-        <hr>
-        <h2>Submit to DRES</h2>
-        <div class="row">
-          <button id="connect" type="button">Connect to DRES</button>
-          <label>Evaluation
-            <select id="evaluation" disabled><option value="">Connect first</option></select>
-          </label>
-        </div>
-        <p id="dresStatus">No evaluation selected.</p>
-        <div class="row">
-          <label>Start (ms)<input id="startMs" class="time-input" type="number" min="0"></label>
-          <button id="setStart" type="button" disabled>Set start from player</button>
-          <label>End (ms)<input id="endMs" class="time-input" type="number" min="0"></label>
-          <button id="setEnd" type="button" disabled>Set end from player</button>
-        </div>
-        <p class="hint">Play the clip and check that your range covers the target before submitting.</p>
-        <button id="submit" class="primary" type="button" disabled>Submit answer</button>
-        <pre id="reply"></pre>
-      </section>
-    </div>
-  </main>
+      <h2>DRES</h2>
+      <p>
+        <button id="connect" type="button">1. Connect</button>
+        <select id="evaluation" disabled aria-label="Evaluation"><option value="">2. Choose evaluation</option></select>
+      </p>
+      <p id="dresStatus">Not connected.</p>
+      <p>
+        <label>Start (ms) <input id="startMs" type="number" min="0"></label>
+        <button id="setStart" type="button" disabled>Set from player</button>
+      </p>
+      <p>
+        <label>End (ms) <input id="endMs" type="number" min="0"></label>
+        <button id="setEnd" type="button" disabled>Set from player</button>
+      </p>
+      <button id="submit" type="button" disabled>3. Submit answer</button>
+      <pre id="reply"></pre>
+    </section>
+  </div>
   <script src="/app.js" defer></script>
 </body>
 </html>

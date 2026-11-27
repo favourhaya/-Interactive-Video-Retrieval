@@ -1,7 +1,3 @@
-import re
-import shutil
-import sys
-import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -98,28 +94,11 @@ def encode_texts(texts):
     return q.numpy()
 
 
-def search_queries(queries, k=20, combine="max", per_video=0):
-    """Several text queries at once (e.g. one phrasing per line). Each shot gets its best
-    score over the queries ("max": matches any phrasing) or the average ("mean")."""
+def search_queries(queries, k=20, per_video=0):
+    """Several text queries at once (one phrasing per line, used by AVS). Each shot gets
+    its best score over the queries, i.e. it matches if it fits any phrasing."""
     per_query = vectors @ encode_texts(queries).T      # (shots, queries)
-    scores = per_query.max(axis=1) if combine == "max" else per_query.mean(axis=1)
-    return rank(scores, k, per_video)
-
-
-def search_text(query, k=20, per_video=0):
-    return search_queries([query], k, per_video=per_video)
-
-
-def split_sentences(text):
-    parts = re.split(r"(?<=[.!?])\s+", text.strip())
-    return [p for p in parts if len(p) > 3]
-
-
-def search_long(text, k=20, combine="max", per_video=0):
-    sentences = split_sentences(text)
-    if len(sentences) <= 1:
-        return search_text(text, k, per_video)
-    return search_queries(sentences, k, combine, per_video)
+    return rank(per_query.max(axis=1), k, per_video)
 
 
 def ahead_max(col, window):
@@ -151,16 +130,6 @@ def search_sequence(lines, k=20, per_video=0, window=3):
 
 def search_similar(video_id, shot_no, k=20, per_video=0):
     return top_k(vectors[row_of[(video_id, shot_no)]], k, per_video)
-
-
-def search_similar_many(keys, k=20, per_video=0):
-    """"More like these": average the embeddings of several chosen shots and search with
-    that. Shots that agree on what matters (e.g. 'fish underwater') pull the query that way."""
-    rows = [row_of[(v, int(n))] for v, n in keys if (v, int(n)) in row_of]
-    if not rows:
-        raise KeyError("none of the given shots exist")
-    q = vectors[rows].mean(axis=0)
-    return top_k(q / np.linalg.norm(q), k, per_video)
 
 
 def trim_borders(image, threshold=18):
@@ -202,20 +171,3 @@ def search_frames(images, k=20, per_video=0):
     z = (per_frame - per_frame.mean(axis=0)) / per_frame.std(axis=0)
     video_fit = np.maximum.reduceat(z, video_start, axis=0).mean(axis=1)
     return rank(z.max(axis=1) + video_fit[video_code], k, per_video)
-
-if __name__ == "__main__":
-    # Command-line search for quick checks: python search.py dog running on a beach
-    # (saves the top thumbnails to results/). Build shots.csv first with shotTable() if missing.
-    results = search_text(" ".join(sys.argv[1:]))
-    print(results.to_string(index=False))
-
-    out = ROOT / "results"
-    shutil.rmtree(out, ignore_errors=True)
-    out.mkdir()
-
-    zips = {p.stem: p for p in (DATA / "thumbnails").rglob("*.zip")}
-
-    for position, r in enumerate(results.itertuples(), 1):
-        with zipfile.ZipFile(zips[r.video_id]) as z:
-            name = next(n for n in z.namelist() if n.endswith(r.thumbnail))
-            (out / f"{position:02d}_{r.thumbnail}").write_bytes(z.read(name))
